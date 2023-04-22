@@ -95,7 +95,9 @@ if config['IFDB']['IFDB_VERIFY_SSL'].lower() in ['true', '1']:
 else:
      IFDB_VERIFY_SSL = False
 
-ifdbc = InfluxDBClient(url=f'{IFDB_URL}:{IFDB_PORT}', token=IFDB_TOKEN, org=IFDB_ORG, verify_ssl=IFDB_VERIFY_SSL)
+current_time = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
+
+ifdbc = InfluxDBClient(url=f'{IFDB_URL}:{IFDB_PORT}', token=IFDB_TOKEN, org=IFDB_ORG, verify_ssl=IFDB_VERIFY_SSL, timeout=(6000,6000))
 ifdbc_write = ifdbc.write_api(write_options=SYNCHRONOUS)
 ifdbc_read = ifdbc.query_api()
 
@@ -126,7 +128,29 @@ if_q = f'from(bucket: "{IFDB_BUCKET}") \
 |> group() \
 |> last()'
 
-last_dp_ts = ifdbc_read.query(if_q)
+attempts = 3
+
+for attempt in range(attempts):
+    try:
+        last_dp_ts = ifdbc_read.query(if_q)
+    except Exception as e:
+        #print(f'{current_time}', file=sys.stderr)
+        #print(f'Failed to query the last data point from InfluxDB! (Try {attempt}/{attempts})', file=sys.stderr)
+        #print("-----------------------------------------------------", file=sys.stderr)
+        #print(e, file=sys.stderr)
+        #print("+++++++++++++++++++++++++++++++++++++++++++++++++++++", file=sys.stderr)
+        #pprint(e)
+        #print("-----------------------------------------------------", file=sys.stderr)
+        time.sleep(10)
+    else:
+        #if attempt > 0:
+            #print(f'Try {attempt}/{attempts} was successfull!', file=sys.stderr)
+        break
+else:
+    # The for "else" block will NOT be executed if the loop is stopped by a break statement.
+    print(f'{current_time}', file=sys.stderr)
+    print(f'All {attempts} attempts failed to query last datapoint from InfluxDB - giving up', file=sys.stderr)
+    sys.exit()
 
 #last_dp_ts_dict = {}
 #for table in last_dp_ts:
@@ -174,10 +198,14 @@ for file in SORTEDCSVFILELIST:
         try:
             reader = csv.DictReader(f, delimiter=';', fieldnames=FIELDNAMES)
         except Exception as e:
-            print("-----------------------------------------------------")
-            print(f'File {file} could not be read by csv.DictReader! Skipping it!')
-            print("-----------------------------------------------------")
-            print(e)
+            print(f'{current_time}', file=sys.stderr)
+            print("-----------------------------------------------------", file=sys.stderr)
+            print(f'File {file} could not be read by csv.DictReader! Skipping it!', file=sys.stderr)
+            print(e, file=sys.stderr)
+            #print("+++++++++++++++++++++++++++++++++++++++++++++++++++++", file=sys.stderr)
+            #pprint(e)
+            print("-----------------------------------------------------", file=sys.stderr)
+
         else:
             try:
                 for row in reader:
@@ -221,10 +249,13 @@ for file in SORTEDCSVFILELIST:
                         else:
                             MEASUREMENT.extend(MM)
             except (csv.Error) as e:
-                print("-----------------------------------------------------")
-                print(f'File {file} is broken! Skipping it!')
-                print("-----------------------------------------------------")
-                print(e)
+                print(f'{current_time}', file=sys.stderr)
+                print("-----------------------------------------------------", file=sys.stderr)
+                print(f'File {file} is broken! Skipping it!', file=sys.stderr)
+                print(e, file=sys.stderr)
+                #print("+++++++++++++++++++++++++++++++++++++++++++++++++++++", file=sys.stderr)
+                #pprint(e)
+                print("-----------------------------------------------------", file=sys.stderr)
 
     if DRYRUN:
         #pass
@@ -238,7 +269,13 @@ for file in SORTEDCSVFILELIST:
             try:
                 ifdbc_write.write(bucket=IFDB_BUCKET, org=IFDB_ORG, write_precision='ms', record=MEASUREMENT)
             except Exception as e:
-                print(e)
+                print(f'{current_time}', file=sys.stderr)
+                print("-----------------------------------------------------", file=sys.stderr)
+                print(f'Failed to write to InfluxDB', file=sys.stderr)
+                print(e, file=sys.stderr)
+                #print("+++++++++++++++++++++++++++++++++++++++++++++++++++++", file=sys.stderr)
+                #pprint(e)
+                print("-----------------------------------------------------", file=sys.stderr)
                 sys.exit()
         else:
             print("InfluxDB is up to date, there is no new data to write")
