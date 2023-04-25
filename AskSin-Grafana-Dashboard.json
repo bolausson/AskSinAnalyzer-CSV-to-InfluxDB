@@ -467,7 +467,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB2}"
           },
-          "query": "from(bucket: \"AskSinAnalyzer\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Telegrams\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"dc\")\r\n  |> group(columns: [\"fromName\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")\r\n",
+          "query": "from(bucket: \"AskSinAnalyzer\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Telegrams\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"dc\")\r\n  |> filter(fn: (r) => r[\"fromName\"] =~ /^${HmIPDevices:regex}/)\r\n  |> group(columns: [\"fromName\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> yield(name: \"mean\")\r\n",
           "refId": "A"
         }
       ],
@@ -566,7 +566,7 @@
             "type": "influxdb",
             "uid": "${DS_INFLUXDB2}"
           },
-          "query": "from(bucket: \"AskSinAnalyzer\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Telegrams\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"cnt\")\r\n  |> group(columns: [\"fromName\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> cumulativeSum()\r\n  |> yield(name: \"mean\")\r\n",
+          "query": "from(bucket: \"AskSinAnalyzer\")\r\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\r\n  |> filter(fn: (r) => r[\"_measurement\"] == \"Telegrams\")\r\n  |> filter(fn: (r) => r[\"_field\"] == \"cnt\")\r\n  |> filter(fn: (r) => r[\"fromName\"] =~ /^${HmIPDevices:regex}/)\r\n  |> group(columns: [\"fromName\"])\r\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\r\n  |> cumulativeSum()\r\n  |> yield(name: \"mean\")\r\n",
           "refId": "A"
         }
       ],
@@ -574,7 +574,7 @@
       "type": "timeseries"
     }
   ],
-  "refresh": "",
+  "refresh": "1m",
   "revision": 1,
   "schemaVersion": 38,
   "style": "dark",
@@ -611,6 +611,6 @@
   "timezone": "",
   "title": "AskSin",
   "uid": "Vaxj9RPVz",
-  "version": 21,
+  "version": 22,
   "weekStart": ""
 }
