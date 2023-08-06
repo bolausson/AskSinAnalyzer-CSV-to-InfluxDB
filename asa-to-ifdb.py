@@ -207,8 +207,10 @@ for file in SORTEDCSVFILELIST:
             print("-----------------------------------------------------", file=sys.stderr)
 
         else:
+            rowcounter = 1
             try:
                 for row in reader:
+                    rowcounter += 1
                     # Do not process the header line!
                     if row["tstamp"] != "tstamp":
                         #pprint(row)
@@ -252,6 +254,7 @@ for file in SORTEDCSVFILELIST:
                 print(f'{current_time}', file=sys.stderr)
                 print("-----------------------------------------------------", file=sys.stderr)
                 print(f'File {file} is broken! Skipping it!', file=sys.stderr)
+                print(f'Row: {rowcounter}', file=sys.stderr)
                 print(e, file=sys.stderr)
                 #print("+++++++++++++++++++++++++++++++++++++++++++++++++++++", file=sys.stderr)
                 #pprint(e)
