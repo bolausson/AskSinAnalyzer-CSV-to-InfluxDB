@@ -75,6 +75,7 @@ elif not Path(CONFIGFILE).is_file() and CREATECONFIGFILE:
         'IFDB_BUCKET': "AskSinAnalyzer",
         'IFDB_TOKEN': "Your-Token-Goes-Here",
         'IFDB_VERIFY_SSL': False,
+        'IFDB_RANGE_START': "Start looking back for last result e.g. -30d or 2023-01-01T00:00:00Z",
     }
 
     with open(CONFIGFILE, 'w') as f:
@@ -89,6 +90,7 @@ IFDB_PORT = config['IFDB']['IFDB_PORT']
 IFDB_ORG = config['IFDB']['IFDB_ORG']
 IFDB_BUCKET = config['IFDB']['IFDB_BUCKET']
 IFDB_TOKEN = config['IFDB']['IFDB_TOKEN']
+IFDB_RANGE_START = config['IFDB']['IFDB_RANGE_START']
 
 if config['IFDB']['IFDB_VERIFY_SSL'].lower() in ['true', '1']:
      IFDB_VERIFY_SSL = True
@@ -106,12 +108,14 @@ FIELDNAMES = ['tstamp', 'date', 'rssi', 'len', 'cnt', 'dc', 'flags', 'type', 'fr
 
 # Get last data point from InfluxDB
 #if_q = f'from(bucket: "{IFDB_BUCKET}") \
-#|> range(start: 1970-01-01T00:00:00Z) \
+#|> range(start: {IFDB_RANGE_START}) \
 #|> filter(fn: (r) => r["_measurement"] == "Telegrams") \
 #|> filter(fn: (r) => r["_field"] == "date") \
-#|> group() \
-#|> last()'
+#|> tail(n:1)'
+#t0 = time.time()
 #last_dp_date = ifdbc_read.query(if_q)
+#t1 = time.time()
+#totalt = t1-t0
 
 #last_dp_date_dict = {}
 #for table in last_dp_date:
@@ -121,8 +125,13 @@ FIELDNAMES = ['tstamp', 'date', 'rssi', 'len', 'cnt', 'dc', 'flags', 'type', 'fr
 #
 #pprint(last_dp_date_dict)
 
+# Use tail() or limit() to get last or first value of a time series instead of group() + las()
+#https://docs.influxdata.com/flux/v0.x/stdlib/universe/tail/
+#https://docs.influxdata.com/flux/v0.x/stdlib/universe/limit/
+
+
 if_q = f'from(bucket: "{IFDB_BUCKET}") \
-|> range(start: 1970-01-01T00:00:00Z) \
+|> range(start: {IFDB_RANGE_START}) \
 |> filter(fn: (r) => r["_measurement"] == "Telegrams") \
 |> filter(fn: (r) => r["_field"] == "tstamp") \
 |> group() \
@@ -132,8 +141,14 @@ attempts = 3
 
 for attempt in range(attempts):
     try:
+        t0 = time.time()
         last_dp_ts = ifdbc_read.query(if_q)
+        t1 = time.time()
+        totalt = t1-t0
+        print(f'InfluxDB query took {totalt} seconds')
     except Exception as e:
+        t1 = time.time()
+        totalt = t1-t0
         #print(f'{current_time}', file=sys.stderr)
         #print(f'Failed to query the last data point from InfluxDB! (Try {attempt}/{attempts})', file=sys.stderr)
         #print("-----------------------------------------------------", file=sys.stderr)
@@ -148,7 +163,10 @@ for attempt in range(attempts):
         break
 else:
     # The for "else" block will NOT be executed if the loop is stopped by a break statement.
+    t1 = time.time()
+    totalt = t1-t0
     print(f'{current_time}', file=sys.stderr)
+    print(f'InfluxDB query took {totalt} seconds before failing!', file=sys.stderr)
     print(f'All {attempts} attempts failed to query last datapoint from InfluxDB - giving up', file=sys.stderr)
     sys.exit()
 
@@ -270,9 +288,15 @@ for file in SORTEDCSVFILELIST:
             print("Writing data to InfluxDB")
         #print(f'ifdbc_write.write(bucket={IFDB_BUCKET}, org={IFDB_ORG}, write_precision="ms", record=MEASUREMENT)')
             try:
+                t0 = time.time()
                 ifdbc_write.write(bucket=IFDB_BUCKET, org=IFDB_ORG, write_precision='ms', record=MEASUREMENT)
+                t1 = time.time()
+                totalt = t1-t0
             except Exception as e:
+                t1 = time.time()
+                totalt = t1-t0
                 print(f'{current_time}', file=sys.stderr)
+                print(f'InfluxDB query took {totalt} seconds before failing!', file=sys.stderr)
                 print("-----------------------------------------------------", file=sys.stderr)
                 print(f'Failed to write to InfluxDB', file=sys.stderr)
                 print(e, file=sys.stderr)
