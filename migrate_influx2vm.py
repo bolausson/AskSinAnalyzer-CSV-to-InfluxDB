@@ -280,19 +280,35 @@ use_chunking = args.migrate_all or (args.start_time and args.start_time.startswi
                                      int(args.start_time[1:-1]) > 30 if args.start_time[-1] == 'd' else False)
 
 if use_chunking and args.migrate_all:
-    # For --all, we need to first find the earliest data point
+    # For --all, we need to first find the earliest data point using InfluxQL (much faster)
     print('Finding earliest data in InfluxDB...')
-    first_query = f'''
-from(bucket: "{IFDB_BUCKET}")
-  |> range(start: 1970-01-01T00:00:00Z, stop: now())
-  |> filter(fn: (r) => r["_measurement"] == "Telegrams")
-  |> filter(fn: (r) => r["_field"] == "tstamp")
-  |> first()
-'''
+
+    # Extract database name from bucket (format: "dbname/retention")
+    ifdb_database = IFDB_BUCKET.split('/')[0] if '/' in IFDB_BUCKET else IFDB_BUCKET
+
+    influxql_query = 'SELECT * FROM "Telegrams" ORDER BY time ASC LIMIT 1'
+    influxql_url = f'{IFDB_URL}:{IFDB_PORT}/query'
+
+    if args.verbose:
+        print(f'  Query: {influxql_query}')
+
     try:
-        result = ifdbc_read.query(first_query)
-        if result and len(result) > 0 and len(result[0].records) > 0:
-            first_time = result[0].records[0].get_time()
+        response = requests.get(
+            influxql_url,
+            params={'db': ifdb_database, 'q': influxql_query},
+            headers={'Authorization': f'Token {IFDB_TOKEN}'},
+            verify=IFDB_VERIFY_SSL,
+            timeout=60
+        )
+
+        if response.status_code != 200:
+            print(f'Error querying InfluxDB: {response.status_code} {response.text}', file=sys.stderr)
+            sys.exit(1)
+
+        data = response.json()
+        if 'results' in data and data['results'] and 'series' in data['results'][0]:
+            first_time_str = data['results'][0]['series'][0]['values'][0][0]
+            first_time = datetime.fromisoformat(first_time_str.replace('Z', '+00:00'))
             print(f'  Earliest data found: {first_time}')
             start_dt = first_time.replace(tzinfo=None)
         else:
