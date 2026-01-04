@@ -13,6 +13,7 @@ import os
 import csv
 import sys
 import time
+import json
 import argparse
 import configparser
 import requests
@@ -91,7 +92,7 @@ else:
 current_time = datetime.now().strftime('%Y-%m-%dT%H:%M:%SZ')
 
 # VictoriaMetrics endpoints
-VM_IMPORT_URL = f'{VM_URL}:{VM_PORT}/api/v1/import/prometheus'
+VM_IMPORT_URL = f'{VM_URL}:{VM_PORT}/api/v1/import'
 VM_QUERY_URL = f'{VM_URL}:{VM_PORT}/api/v1/query'
 
 # Setup authentication if configured
@@ -155,23 +156,35 @@ def get_last_timestamp():
 if LATEST:
     get_last_timestamp()
 
-def escape_label_value(value):
-    """Escape special characters in Prometheus label values"""
-    return str(value).replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
+def format_vm_json_datapoint(measurement, tags, fields, timestamp_ms):
+    """Format a data point as VictoriaMetrics native JSON format
 
-def format_prometheus_line(measurement, tags, fields, timestamp_ms):
-    """Format a data point as Prometheus line protocol for VictoriaMetrics"""
-    lines = []
+    VictoriaMetrics JSON format:
+    {
+        "metric": {"__name__": "metric_name", "label1": "value1", ...},
+        "values": [value1, value2, ...],
+        "timestamps": [ts1_ms, ts2_ms, ...]
+    }
+    """
+    datapoints = []
     for field_name, field_value in fields.items():
         if field_name in ['tstamp', 'date']:  # Skip non-numeric fields
             continue
-        # Build label string
-        label_parts = [f'{k}="{escape_label_value(v)}"' for k, v in tags.items()]
-        labels_str = ','.join(label_parts)
-        # Metric name format: measurement_field{labels} value timestamp
-        metric_name = f'{measurement}_{field_name}'
-        lines.append(f'{metric_name}{{{labels_str}}} {field_value} {timestamp_ms}')
-    return lines
+        # Create metric with __name__ and all tags as labels
+        metric = {
+            "__name__": f"{measurement}_{field_name}"
+        }
+        # Add all tags as labels
+        metric.update(tags)
+
+        # Create datapoint
+        datapoint = {
+            "metric": metric,
+            "values": [field_value],
+            "timestamps": [timestamp_ms]
+        }
+        datapoints.append(datapoint)
+    return datapoints
 
 CSVFILELIST = []
 FIELDNAMES = ['tstamp', 'date', 'rssi', 'len', 'cnt', 'dc', 'flags', 'type', 'fromAddr', 'toAddr', 'fromName', 'toName', 'fromSerial', 'toSerial', 'toIsIp', 'fromIsIp', 'payload', 'raw']
@@ -198,7 +211,7 @@ max_ts_processed = last_ts_value
 for file in SORTEDCSVFILELIST:
     print(f'Reading file {file} ({COUNTER}/{NUMFILES})')
     COUNTER += 1
-    PROMETHEUS_LINES = []
+    VM_DATAPOINTS = []
 
     with open(file) as f:
         try:
@@ -243,8 +256,8 @@ for file in SORTEDCSVFILELIST:
                             if LATEST and ts <= last_ts_value:
                                 pass
                             else:
-                                lines = format_prometheus_line("Telegrams", tags, fields, ts)
-                                PROMETHEUS_LINES.extend(lines)
+                                datapoints = format_vm_json_datapoint("Telegrams", tags, fields, ts)
+                                VM_DATAPOINTS.extend(datapoints)
                                 if ts > max_ts_processed:
                                     max_ts_processed = ts
                         except (ValueError, KeyError) as e:
@@ -260,14 +273,18 @@ for file in SORTEDCSVFILELIST:
                 print("-----------------------------------------------------", file=sys.stderr)
 
     if DRYRUN:
-        for line in PROMETHEUS_LINES[:20]:  # Print first 20 lines as sample
-            print(line)
-        if len(PROMETHEUS_LINES) > 20:
-            print(f'... and {len(PROMETHEUS_LINES) - 20} more lines')
+        # Print first few datapoints as sample
+        sample_count = min(5, len(VM_DATAPOINTS))
+        for i in range(sample_count):
+            print(json.dumps(VM_DATAPOINTS[i], indent=2))
+        if len(VM_DATAPOINTS) > sample_count:
+            print(f'... and {len(VM_DATAPOINTS) - sample_count} more datapoints')
     else:
-        if len(PROMETHEUS_LINES):
-            print(f"Writing {len(PROMETHEUS_LINES)} data points to VictoriaMetrics")
-            data = '\n'.join(PROMETHEUS_LINES)
+        if len(VM_DATAPOINTS):
+            print(f"Writing {len(VM_DATAPOINTS)} data points to VictoriaMetrics")
+            # Convert to newline-delimited JSON (NDJSON) - each datapoint on its own line
+            # VictoriaMetrics /api/v1/import expects this format, not a JSON array
+            data = '\n'.join(json.dumps(dp) for dp in VM_DATAPOINTS)
 
             try:
                 t0 = time.time()
@@ -278,7 +295,7 @@ for file in SORTEDCSVFILELIST:
                 response = requests.post(
                     VM_IMPORT_URL,
                     data=data,
-                    headers={'Content-Type': 'text/plain'},
+                    headers={'Content-Type': 'application/json'},
                     auth=auth,
                     verify=VM_VERIFY_SSL,
                     timeout=600

@@ -451,11 +451,13 @@
         "name": "HmIPDevices",
         "options": [],
         "query": {
+          "qryType": 1,
           "query": "label_values(Telegrams_dc, fromName)",
-          "refId": "StandardVariableQuery"
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
+        "sort": 1,
         "type": "query"
       }
     ]
